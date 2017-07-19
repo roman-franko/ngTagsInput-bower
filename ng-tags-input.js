@@ -5,7 +5,7 @@
  * Copyright (c) 2013-2017 Michael Benford
  * License: MIT
  *
- * Generated at 2017-07-18 12:22:24 +0300
+ * Generated at 2017-07-19 08:13:20 +0300
  */
 (function (angular$1) {
 'use strict';
@@ -150,12 +150,55 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
       });
     };
 
-    self.remove = function (index) {
+    self.remove = function (index, backwards) {
+      if (backwards === undefined) {
+        return self.defaultRemove(index);
+      }
+      if (backwards) {
+        return self.removeBackwards(index);
+      } else {
+        return self.removeForward(index);
+      }
+    };
+
+    self.defaultRemove = function (index) {
       var tag = self.items[index];
       return canRemoveTag(tag).then(function () {
         self.items.splice(index, 1);
         self.clearSelection();
         events.trigger('tag-removed', { $tag: tag });
+        return tag;
+      });
+    };
+
+    self.removeBackwards = function (index) {
+      var tag = self.items[index];
+      return canRemoveTag(tag).then(function () {
+        self.items.splice(index, 1);
+        if (index <= 0) {
+          index = 0;
+        } else {
+          self.index = index - 1;
+        }
+        events.trigger('tag-removed', { $tag: tag });
+        self.selected = self.items[self.index];
+        events.trigger('suggestion-selected', self.index);
+        return tag;
+      });
+    };
+
+    self.removeForward = function (index) {
+      var tag = self.items[index];
+      return canRemoveTag(tag).then(function () {
+        self.items.splice(index, 1);
+        if (index >= self.items.length) {
+          self.index = index - 1;
+        } else {
+          self.index = index;
+        }
+        events.trigger('tag-removed', { $tag: tag });
+        self.selected = self.items[self.index];
+        events.trigger('suggestion-selected', self.index);
         return tag;
       });
     };
@@ -179,8 +222,8 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
       self.select(++self.index);
     };
 
-    self.removeSelected = function () {
-      return self.remove(self.index);
+    self.removeSelected = function (backwards) {
+      return self.remove(self.index, backwards || false);
     };
 
     self.clearSelection = function () {
@@ -229,6 +272,7 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
         type: [String, 'text', validateType],
         placeholder: [String, 'Add a tag'],
         tabindex: [Number, null],
+        freezeFocusOnRemoving: [Boolean, false],
         removeTagSymbol: [String, String.fromCharCode(215)],
         replaceSpacesWithDashes: [Boolean, true],
         minLength: [Number, 3],
@@ -425,6 +469,9 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
         // automatically, but since the model is an array, $setViewValue does nothing and it's up to us to do it.
         // Unfortunately this won't trigger any registered $parser and there's no safe way to do it.
         ngModelCtrl.$setDirty();
+        if (!scope.options.freezeFocusOnRemoving) {
+          focusInput();
+        }
       }).on('invalid-tag', function () {
         scope.newTag.invalid = true;
       }).on('option-change', function (e) {
@@ -455,7 +502,10 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
         var addKeys = (_addKeys = {}, defineProperty(_addKeys, tiConstants.KEYS.enter, options.addOnEnter), defineProperty(_addKeys, tiConstants.KEYS.comma, options.addOnComma), defineProperty(_addKeys, tiConstants.KEYS.space, options.addOnSpace), _addKeys);
 
         var shouldAdd = !options.addFromAutocompleteOnly && addKeys[key];
-        var shouldRemove = (key === tiConstants.KEYS.backspace || key === tiConstants.KEYS.delete) && tagList.selected;
+
+        var shouldRemoveByBackspace = key === tiConstants.KEYS.backspace && scope.newTag.text().length === 0;
+        var shouldRemoveByDelete = key === tiConstants.KEYS.delete && tagList.selected;
+
         var shouldEditLastTag = key === tiConstants.KEYS.backspace && scope.newTag.text().length === 0 && options.enableEditingLastTag;
         var shouldSelect = (key === tiConstants.KEYS.backspace || key === tiConstants.KEYS.left || key === tiConstants.KEYS.right) && scope.newTag.text().length === 0 && !options.enableEditingLastTag;
 
@@ -468,17 +518,23 @@ function TagsInputDirective($timeout, $document, $window, $q, tagsInputConfig, t
               scope.newTag.text(tag[options.displayProperty]);
             }
           });
-        } else if (shouldRemove) {
-          tagList.removeSelected();
+        } else if (shouldRemoveByBackspace) {
+          if (tagList.selected) {
+            tagList.removeSelected(true);
+          } else {
+            tagList.selectPrior();
+          }
+        } else if (shouldRemoveByDelete) {
+          tagList.removeSelected(false);
         } else if (shouldSelect) {
-          if (key === tiConstants.KEYS.left || key === tiConstants.KEYS.backspace) {
+          if (key === tiConstants.KEYS.left) {
             tagList.selectPrior();
           } else if (key === tiConstants.KEYS.right) {
             tagList.selectNext();
           }
         }
 
-        if (shouldAdd || shouldSelect || shouldRemove || shouldEditLastTag) {
+        if (shouldAdd || shouldSelect || shouldRemoveByBackspace || shouldRemoveByDelete || shouldEditLastTag) {
           event.preventDefault();
         }
       }).on('input-paste', function (event) {
@@ -1195,7 +1251,7 @@ function TemplateCacheRegister($templateCache) {
   $templateCache.put('ngTagsInput/auto-complete-match.html', "<span ng-bind-html=\"$highlight($getDisplayText())\"></span>");
   $templateCache.put('ngTagsInput/auto-complete.html', "<div class=\"autocomplete\" ng-if=\"suggestionList.visible\"><ul class=\"suggestion-list\"><li class=\"suggestion-item\" ng-repeat=\"item in suggestionList.items track by track(item)\" ng-class=\"getSuggestionClass(item, $index)\" ng-click=\"addSuggestionByIndex($index)\" ng-mouseenter=\"suggestionList.select($index)\"><ti-autocomplete-match scope=\"templateScope\" data=\"::item\"></ti-autocomplete-match></li></ul></div>");
   $templateCache.put('ngTagsInput/tag-item.html', "<span ng-bind=\"$getDisplayText()\"></span> <a class=\"remove-button\" ng-click=\"$removeTag()\" ng-bind=\"::$$removeTagSymbol\"></a>");
-  $templateCache.put('ngTagsInput/tags-input.html', "<div class=\"host\" tabindex=\"-1\" ng-click=\"eventHandlers.host.click()\" ti-transclude-append><div class=\"tags\" ng-class=\"{focused: hasFocus}\"><ul class=\"tag-list\"><li class=\"tag-item\" ng-repeat=\"tag in tagList.items track by track(tag)\" ng-class=\"getTagClass(tag, $index)\" ng-click=\"eventHandlers.tag.click(tag)\"><ti-tag-item scope=\"templateScope\" data=\"::tag\"></ti-tag-item></li></ul><input class=\"input\" autocomplete=\"off\" ng-model=\"newTag.text\" ng-model-options=\"{getterSetter: true}\" ng-keydown=\"eventHandlers.input.keydown($event)\" ng-focus=\"eventHandlers.input.focus($event)\" ng-blur=\"eventHandlers.input.blur($event)\" ng-paste=\"eventHandlers.input.paste($event)\" ng-trim=\"false\" ng-class=\"{'invalid-tag': newTag.invalid}\" ng-disabled=\"disabled\" ti-bind-attrs=\"{type: options.type, placeholder: options.placeholder, tabindex: options.tabindex, spellcheck: options.spellcheck}\" ti-autosize></div></div>");
+  $templateCache.put('ngTagsInput/tags-input.html', "<div class=\"host\" tabindex=\"-1\" ng-click=\"eventHandlers.host.click(); $event.stopPropagation();\" ti-transclude-append><div class=\"tags\" ng-class=\"{focused: hasFocus}\"><ul class=\"tag-list\"><li class=\"tag-item\" ng-repeat=\"tag in tagList.items track by track(tag)\" ng-class=\"getTagClass(tag, $index)\" ng-click=\"eventHandlers.tag.click(tag)\"><ti-tag-item scope=\"templateScope\" data=\"::tag\"></ti-tag-item></li></ul><input class=\"input\" autocomplete=\"off\" ng-model=\"newTag.text\" ng-model-options=\"{getterSetter: true}\" ng-keydown=\"eventHandlers.input.keydown($event)\" ng-focus=\"eventHandlers.input.focus($event)\" ng-blur=\"eventHandlers.input.blur($event)\" ng-paste=\"eventHandlers.input.paste($event)\" ng-trim=\"false\" ng-class=\"{'invalid-tag': newTag.invalid}\" ng-disabled=\"disabled\" ti-bind-attrs=\"{type: options.type, placeholder: options.placeholder, tabindex: options.tabindex, spellcheck: options.spellcheck}\" ti-autosize></div></div>");
 }
 
 angular$1.module('ngTagsInput', []).directive('tagsInput', TagsInputDirective).directive('tiTagItem', TagItemDirective).directive('autoComplete', AutocompleteDirective).directive('tiAutocompleteMatch', AutocompleteMatchDirective).directive('tiAutosize', AutosizeDirective).directive('tiBindAttrs', BindAttributesDirective).directive('tiTranscludeAppend', TranscludeAppendDirective).factory('tiUtil', UtilService).constant('tiConstants', Constants).provider('tagsInputConfig', TagsInputConfigurationProvider).run(TemplateCacheRegister);
